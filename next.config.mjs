@@ -11,6 +11,20 @@ const nextConfig = {
     ],
     unoptimized: true,
   },
+  async rewrites() {
+    return {
+      afterFiles: [
+        {
+          source: '/games/roms/snes/:path*',
+          destination: 'https://classicgamezone.com/games/roms/snes/:path*',
+        },
+        {
+          source: '/emulatorjs/data/:path*',
+          destination: 'https://classicgamezone.com/emulatorjs/data/:path*',
+        },
+      ],
+    };
+  },
 };
 
 export default nextConfig;

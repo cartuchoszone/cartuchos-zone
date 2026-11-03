@@ -5,7 +5,7 @@ export const SITE_CONFIG = {
   defaultLocale: 'pt',
   gamesPerPage: 18,
   remoteAssetOrigin: 'https://classicgamezone.com',
-  emulatorDataCdn: 'https://cdn.emulatorjs.org/stable/data/',
+  emulatorDataCdn: '/emulatorjs/data/',
   hero: {
     title: 'Coleção de Cartuchos Super Nintendo (SNES)',
     subtitle: '326 Clássicos Oficiais & ROM Hacks prontos para jogar direto no navegador',

@@ -5,14 +5,41 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-# Cache persistente para ROMs no Edge CDN da Netlify
+[[headers]]
+  for = "/emulatorjs/data/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    Access-Control-Allow-Origin = "*"
+
+[[headers]]
+  for = "/games/roms/snes/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800, stale-while-revalidate=86400"
+    Access-Control-Allow-Origin = "*"
+
 [[headers]]
   for = "/api/rom/*"
   [headers.values]
     Cache-Control = "public, max-age=604800, stale-while-revalidate=86400"
     Access-Control-Allow-Origin = "*"
 
-# Proxy direto no Edge CDN da Netlify para as ROMs de Super Nintendo
+# Proxy direto no Edge CDN da Netlify para as ROMs nativas .smc (idêntico ao classicgamezone.com)
+[[redirects]]
+  from = "/games/roms/snes/*"
+  to = "https://classicgamezone.com/games/roms/snes/:splat"
+  status = 200
+  force = true
+  headers = { Access-Control-Allow-Origin = "*", Access-Control-Allow-Methods = "GET, HEAD, OPTIONS", Cache-Control = "public, max-age=604800, stale-while-revalidate=86400" }
+
+# Proxy para os arquivos WASM/JS/CSS do EmulatorJS 4.2.1 (preservando o loader.js local com cache IndexedDB)
+[[redirects]]
+  from = "/emulatorjs/data/*"
+  to = "https://classicgamezone.com/emulatorjs/data/:splat"
+  status = 200
+  force = false
+  headers = { Access-Control-Allow-Origin = "*", Cache-Control = "public, max-age=31536000, immutable" }
+
+# Fallback de compatibilidade para /api/rom/:id
 [[redirects]]
   from = "/api/rom/:id"
   to = "https://classicgamezone.com/games/roms/snes/:id.smc"
