@@ -1,0 +1,123 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Silkscreen:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #0c0a14;
+  color: #f3f4f6;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+/* 16-Bit Pixel Utilities */
+.font-pixel {
+  font-family: 'Press Start 2P', monospace;
+}
+
+.font-silkscreen {
+  font-family: 'Silkscreen', monospace;
+}
+
+.retro-shadow {
+  box-shadow: 4px 4px 0px 0px #000000;
+}
+
+.retro-shadow-sm {
+  box-shadow: 2px 2px 0px 0px #000000;
+}
+
+.retro-shadow-purple {
+  box-shadow: 4px 4px 0px 0px #581c87;
+}
+
+.retro-shadow-amber {
+  box-shadow: 4px 4px 0px 0px #78350f;
+}
+
+.retro-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0px 0px #000000;
+}
+
+/* SNES Bevel Borders (Raised 3D 16-bit Plastic) */
+.snes-bevel-raised {
+  border-top: 3px solid #7a768c;
+  border-left: 3px solid #7a768c;
+  border-right: 3px solid #100e18;
+  border-bottom: 3px solid #100e18;
+}
+
+.snes-bevel-inset {
+  border-top: 2px solid #100e18;
+  border-left: 2px solid #100e18;
+  border-right: 2px solid #58546b;
+  border-bottom: 2px solid #58546b;
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #13101d;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #4c1d95;
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #f59e0b;
+}
+
+/* Animations */
+@keyframes keychain-swing {
+  0% { transform: rotate(0deg); }
+  25% { transform: rotate(4.5deg); }
+  50% { transform: rotate(0deg); }
+  75% { transform: rotate(-4.5deg); }
+  100% { transform: rotate(0deg); }
+}
+
+.animate-keychain {
+  transform-origin: top center;
+  animation: keychain-swing 3.5s ease-in-out infinite;
+}
+
+.animate-keychain-hover:hover {
+  animation: keychain-swing 1.2s ease-in-out infinite;
+}
+
+@keyframes led-blink {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 6px #ef4444); }
+  50% { opacity: 0.45; filter: drop-shadow(0 0 1px #ef4444); }
+}
+
+.animate-led {
+  animation: led-blink 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes crt-shimmer {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(250%); }
+}
+
+.animate-crt-shimmer {
+  animation: crt-shimmer 6s linear infinite;
+}
+
+/* Scanline Overlay (Optional retro CRT feel) */
+.scanlines {
+  background: linear-gradient(
+    rgba(18, 16, 26, 0) 50%, 
+    rgba(0, 0, 0, 0.35) 50%
+  );
+  background-size: 100% 4px;
+}
