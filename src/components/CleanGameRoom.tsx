@@ -217,6 +217,18 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
     #game {
       width: 100% !important;
       height: 100% !important;
+      image-rendering: pixelated !important;
+      image-rendering: -moz-crisp-edges !important;
+      image-rendering: crisp-edges !important;
+      transform: translateZ(0);
+      will-change: transform;
+    }
+    #game canvas {
+      width: 100% !important;
+      height: 100% !important;
+      image-rendering: pixelated !important;
+      image-rendering: -moz-crisp-edges !important;
+      image-rendering: crisp-edges !important;
     }
     /* Force hide EmulatorJS built-in overlapping touch gamepad so the game screen is 100% clean! */
     .ejs_virtual_gamepad_parent,
@@ -243,12 +255,18 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
     window.EJS_pathtodata = '${SITE_CONFIG.emulatorDataCdn}';
     window.EJS_startOnLoaded = true;
     window.EJS_volume = 0.7;
-    window.EJS_language = 'pt-BR';
+    window.EJS_disableAutoLang = true;
+    window.EJS_language = 'en-US';
     window.EJS_color = '#f59e0b';
+    window.EJS_threads = false;
+    window.EJS_cacheLimit = 500;
     window.EJS_forceTouchControls = false;
     window.EJS_VirtualGamepadSettings = [];
     window.EJS_defaultOptions = {
-      'virtual-gamepad': 'disabled'
+      'virtual-gamepad': 'disabled',
+      'shader': 'disabled',
+      'rewind': 'disabled',
+      'vsync': 'enabled'
     };
     window.EJS_Buttons = {
       playPause: true,
