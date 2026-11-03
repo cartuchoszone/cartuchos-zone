@@ -1,0 +1,15 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Proxy direto no Edge CDN da Netlify para as ROMs de Super Nintendo
+# Garante suporte imediato a HEAD e GET, streaming de alta velocidade, headers CORS liberados e resolve o erro 404
+[[redirects]]
+  from = "/api/rom/:id"
+  to = "https://classicgamezone.com/games/roms/snes/:id.smc"
+  status = 200
+  force = true
+  headers = { Access-Control-Allow-Origin = "*", Access-Control-Allow-Methods = "GET, HEAD, OPTIONS", Access-Control-Allow-Headers = "*" }
