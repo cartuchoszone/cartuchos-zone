@@ -12,18 +12,20 @@ const nextConfig = {
     unoptimized: true,
   },
   async rewrites() {
-    return {
-      afterFiles: [
-        {
-          source: '/games/roms/snes/:path*',
-          destination: 'https://classicgamezone.com/games/roms/snes/:path*',
-        },
-        {
-          source: '/emulatorjs/data/:path*',
-          destination: 'https://classicgamezone.com/emulatorjs/data/:path*',
-        },
-      ],
-    };
+    return [
+      {
+        source: '/games/roms/snes/:id.smc',
+        destination: '/api/rom/:id',
+      },
+      {
+        source: '/games/roms/snes/:id.sfc',
+        destination: '/api/rom/:id',
+      },
+      {
+        source: '/games/roms/snes/:id',
+        destination: '/api/rom/:id',
+      },
+    ];
   },
 };
 

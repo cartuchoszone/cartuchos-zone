@@ -78,7 +78,7 @@ export function resolveRomUrl(game: Game): string {
       return game.romUrl;
     }
   }
-  return `/games/roms/snes/${encodeURIComponent(game.id)}.smc`;
+  return `/api/rom/${encodeURIComponent(game.id)}`;
 }
 
 export function getAllCatalogGames(): Game[] {

@@ -12,37 +12,32 @@
     Access-Control-Allow-Origin = "*"
 
 [[headers]]
-  for = "/games/roms/snes/*"
+  for = "/api/rom/*"
   [headers.values]
-    Cache-Control = "public, max-age=604800, stale-while-revalidate=86400"
+    Cache-Control = "public, max-age=31536000, immutable"
     Access-Control-Allow-Origin = "*"
 
 [[headers]]
-  for = "/api/rom/*"
+  for = "/games/roms/snes/*"
   [headers.values]
-    Cache-Control = "public, max-age=604800, stale-while-revalidate=86400"
+    Cache-Control = "public, max-age=31536000, immutable"
     Access-Control-Allow-Origin = "*"
 
-# Proxy direto no Edge CDN da Netlify para as ROMs nativas .smc (idêntico ao classicgamezone.com)
+# Roteia chamadas legadas de ROMs diretamente para a rota segura com proxy e cache
 [[redirects]]
-  from = "/games/roms/snes/*"
-  to = "https://classicgamezone.com/games/roms/snes/:splat"
+  from = "/games/roms/snes/:id.smc"
+  to = "/api/rom/:id"
   status = 200
   force = true
-  headers = { Access-Control-Allow-Origin = "*", Access-Control-Allow-Methods = "GET, HEAD, OPTIONS", Cache-Control = "public, max-age=604800, stale-while-revalidate=86400" }
 
-# Proxy para os arquivos WASM/JS/CSS do EmulatorJS 4.2.1 (preservando o loader.js local com cache IndexedDB)
 [[redirects]]
-  from = "/emulatorjs/data/*"
-  to = "https://classicgamezone.com/emulatorjs/data/:splat"
-  status = 200
-  force = false
-  headers = { Access-Control-Allow-Origin = "*", Cache-Control = "public, max-age=31536000, immutable" }
-
-# Fallback de compatibilidade para /api/rom/:id
-[[redirects]]
-  from = "/api/rom/:id"
-  to = "https://classicgamezone.com/games/roms/snes/:id.smc"
+  from = "/games/roms/snes/:id.sfc"
+  to = "/api/rom/:id"
   status = 200
   force = true
-  headers = { Access-Control-Allow-Origin = "*", Access-Control-Allow-Methods = "GET, HEAD, OPTIONS", Cache-Control = "public, max-age=604800, stale-while-revalidate=86400" }
+
+[[redirects]]
+  from = "/games/roms/snes/:id"
+  to = "/api/rom/:id"
+  status = 200
+  force = true

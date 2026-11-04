@@ -129,18 +129,19 @@ export async function GET(
         },
       });
 
-      if (res.ok && res.body) {
+      if (res.ok) {
         const contentType = res.headers.get('content-type') || 'application/octet-stream';
         if (!contentType.includes('text/html')) {
-          // Stream directly to client
-          return new NextResponse(res.body as any, {
+          const arrayBuffer = await res.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          return new NextResponse(buffer, {
             status: 200,
             headers: {
               'Content-Type': 'application/octet-stream',
               'Content-Disposition': `inline; filename="${safeId}.smc"`,
-              'Content-Length': res.headers.get('content-length') || '',
+              'Content-Length': String(buffer.byteLength),
               'Access-Control-Allow-Origin': '*',
-              'Cache-Control': 'public, max-age=86400',
+              'Cache-Control': 'public, max-age=31536000, immutable',
             },
           });
         }

@@ -161,6 +161,13 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
 
     cleanupEmulator();
 
+    // Purge any stale, corrupt, or lag-inducing settings from previous visits
+    try {
+      localStorage.removeItem('ejs-snes9x');
+      localStorage.removeItem('ejs-settings');
+      localStorage.removeItem('ejs_snes_settings');
+    } catch {}
+
     w.EJS_player = '#game';
     w.EJS_gameName = fallbackGame.title;
     w.EJS_gameUrl = romSourceUrl;
@@ -173,8 +180,13 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
     w.EJS_forceLegacyCores = isIOS ? true : undefined;
     w.EJS_cacheDecompressedCores = true;
     w.EJS_forceTouchControls = false;
+    w.EJS_disableLocalStorage = true;
+    w.EJS_defaultOptions = {
+      shader: 'disabled',
+      rewind: 'disabled',
+      vsync: 'disabled',
+    };
     delete w.EJS_VirtualGamepadSettings;
-    delete w.EJS_defaultOptions;
 
     const handleGameStart = () => {
       try {
@@ -215,37 +227,27 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
     };
   }, [romSourceUrl, recoveryKey, fallbackGame.title]);
 
-  // Keep WebGL canvas smoothly sized when rotating smartphone or toggling Pad ON/OFF without remounting
+  // Keep WebGL canvas smoothly sized on orientation changes or control toggling with debouncing (no ResizeObserver thrashing!)
   useEffect(() => {
-    const stageEl = stageContainerRef.current;
-    if (!stageEl) return;
-    let rafId: number | null = null;
+    let timeoutId: any = null;
 
     const triggerResize = () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        rafId = requestAnimationFrame(() => {
-          rafId = null;
-          const w = window as any;
-          w.EJS_emulator?.handleResize?.();
-        });
-      });
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        const w = window as any;
+        w.EJS_emulator?.handleResize?.();
+      }, 150);
     };
 
-    const observer =
-      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(triggerResize) : null;
-    observer?.observe(stageEl);
-    window.visualViewport?.addEventListener('resize', triggerResize);
+    window.addEventListener('resize', triggerResize);
     window.addEventListener('orientationchange', triggerResize);
-    triggerResize();
 
     return () => {
-      observer?.disconnect();
-      window.visualViewport?.removeEventListener('resize', triggerResize);
+      if (timeoutId) clearTimeout(timeoutId);
+      window.removeEventListener('resize', triggerResize);
       window.removeEventListener('orientationchange', triggerResize);
-      if (rafId !== null) cancelAnimationFrame(rafId);
     };
-  }, [isLandscape, showControls, isTouchDevice]);
+  }, [isLandscape, showControls]);
 
   // Zero-re-render direct input to EmulatorJS gameManager in the same window
   const sendGamepadInput = useCallback((btn: SnesButtonKey, pressed: boolean) => {
@@ -485,6 +487,19 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
         .clean-emulator-stage #game {
           width: 100% !important;
           height: 100% !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+        }
+        .clean-emulator-stage #game canvas {
+          display: block !important;
+          max-width: 100% !important;
+          max-height: 100% !important;
+          object-fit: contain !important;
+          image-rendering: pixelated !important;
+          image-rendering: crisp-edges !important;
+          transform: translateZ(0);
+          will-change: transform;
         }
         /* Hide EmulatorJS built-in overlapping virtual gamepad so the game screen is 100% unobstructed */
         .clean-emulator-stage .ejs_virtual_gamepad_parent,
