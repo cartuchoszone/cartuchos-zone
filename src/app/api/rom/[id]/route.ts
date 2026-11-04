@@ -119,6 +119,8 @@ export async function GET(
     `https://classicgamezone.com/games/roms/snes/${safeId}.zip`,
   ];
 
+  const attempts: Array<{ url: string; status?: number; error?: string }> = [];
+
   for (const remoteUrl of candidates) {
     try {
       const res = await fetch(remoteUrl, {
@@ -128,6 +130,8 @@ export async function GET(
           Referer: 'https://classicgamezone.com/',
         },
       });
+
+      attempts.push({ url: remoteUrl, status: res.status });
 
       if (res.ok) {
         const contentType = res.headers.get('content-type') || 'application/octet-stream';
@@ -146,14 +150,15 @@ export async function GET(
           });
         }
       }
-    } catch {
-      // Try next candidate
+    } catch (err: any) {
+      attempts.push({ url: remoteUrl, error: String(err?.message || err) });
     }
   }
 
   return NextResponse.json(
     {
       error: 'ROM indisponível no momento.',
+      attempts,
     },
     {
       status: 404,
