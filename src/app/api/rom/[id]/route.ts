@@ -37,7 +37,7 @@ export async function HEAD(
           'Content-Length': String(stat.size),
           'Content-Disposition': `inline; filename="${safeId}${ext}"`,
           'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'public, max-age=86400',
+          'Cache-Control': 'public, max-age=31536000, immutable',
         },
       });
     }
@@ -69,7 +69,7 @@ export async function HEAD(
             'Content-Length': res.headers.get('content-length') || '',
             'Content-Disposition': `inline; filename="${safeId}.smc"`,
             'Access-Control-Allow-Origin': '*',
-            'Cache-Control': 'public, max-age=86400',
+            'Cache-Control': 'public, max-age=31536000, immutable',
           },
         });
       }
@@ -106,7 +106,7 @@ export async function GET(
           'Content-Type': 'application/octet-stream',
           'Content-Disposition': `inline; filename="${safeId}${ext}"`,
           'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'public, max-age=86400',
+          'Cache-Control': 'public, max-age=31536000, immutable',
         },
       });
     }
