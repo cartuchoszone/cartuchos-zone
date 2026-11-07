@@ -14,16 +14,50 @@ const STORE_NAME = 'roms';
 
 function openRomDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, 2);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
       }
+      if (!db.objectStoreNames.contains('states')) {
+        db.createObjectStore('states');
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
+}
+
+export async function saveStateToIDB(gameId: string, stateBlob: Blob): Promise<void> {
+  const db = await openRomDB();
+  const buffer = await stateBlob.arrayBuffer();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('states', 'readwrite');
+    tx.objectStore('states').put({ buffer, savedAt: Date.now() }, gameId);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function loadStateFromIDB(gameId: string): Promise<Blob | null> {
+  try {
+    const db = await openRomDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction('states', 'readonly');
+      const req = tx.objectStore('states').get(gameId);
+      req.onsuccess = () => {
+        if (req.result && req.result.buffer) {
+          resolve(new Blob([req.result.buffer]));
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
 }
 
 export async function saveRomBlobToIDB(gameId: string, file: Blob, fileName: string): Promise<void> {

@@ -3,12 +3,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Game } from '@/types/game';
-import { SITE_CONFIG } from '@/config/site';
 import { resolveRomUrl } from '@/lib/catalog';
 import {
   addRecentId,
   getCustomGames,
   loadRomBlobUrlFromIDB,
+  saveStateToIDB,
+  loadStateFromIDB,
 } from '@/lib/storage';
 
 interface CleanGameRoomProps {
@@ -33,6 +34,21 @@ const SNES_INPUTS = {
 
 type SnesButtonKey = keyof typeof SNES_INPUTS;
 
+const NOSTALGIST_BUTTON_MAP: Record<SnesButtonKey, string> = {
+  B: 'b',
+  Y: 'y',
+  SELECT: 'select',
+  START: 'start',
+  UP: 'up',
+  DOWN: 'down',
+  LEFT: 'left',
+  RIGHT: 'right',
+  A: 'a',
+  X: 'x',
+  L: 'l',
+  R: 'r',
+};
+
 export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRoomProps) {
   const router = useRouter();
   const [resolvedGame, setResolvedGame] = useState<Game | undefined>(initialGame);
@@ -47,7 +63,7 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
     imageUrl: 'https://classicgamezone.com/games/covers/snes/super-metroid.jpg',
   };
 
-  // Resolve standard catalog ROM URL synchronously on first render so there is zero IDB delay
+  // Resolve standard catalog ROM URL synchronously on first render so there is zero delay
   const [romSourceUrl, setRomSourceUrl] = useState<string>(() =>
     initialGame ? resolveRomUrl(initialGame) : ''
   );
@@ -55,13 +71,29 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
   const [isTouchDevice, setIsTouchDevice] = useState<boolean>(true);
   const [showControls, setShowControls] = useState<boolean>(true);
   const [isLandscape, setIsLandscape] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadingStatus, setLoadingStatus] = useState<string>('Carregando motor WebAssembly 16-Bit...');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [selectedCore, setSelectedCore] = useState<'snes9x2010' | 'snes9x2005'>('snes9x2010');
 
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const nostalgistRef = useRef<any>(null);
   const padRootRef = useRef<HTMLDivElement>(null);
   const stageContainerRef = useRef<HTMLDivElement>(null);
   const dpadRef = useRef<HTMLDivElement>(null);
   const dpadRectRef = useRef<DOMRect | null>(null);
   const activeDpadDirsRef = useRef<SnesButtonKey[]>([]);
   const pressedStateRef = useRef<Record<string, boolean>>({});
+  const toastTimeoutRef = useRef<any>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, 2200);
+  }, []);
 
   useEffect(() => {
     if (!initialGame) {
@@ -110,132 +142,126 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
     };
   }, [fallbackGame.id]);
 
-  // Mount EmulatorJS 4.2.1 directly onto #game in the main DOM (identical to classicgamezone.com)
+  // Mount Nostalgist.js WebAssembly emulator directly onto canvasRef with snes9x2010 core
   useEffect(() => {
-    if (!romSourceUrl) return;
-    const gameEl = document.getElementById('game');
-    if (!gameEl) return;
+    if (!romSourceUrl || !canvasRef.current) return;
+    let isCancelled = false;
 
-    const w = window as any;
-    const isIOS =
-      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const startEmulator = async () => {
+      setIsLoading(true);
+      setLoadingStatus('Carregando motor WebAssembly 16-Bit...');
+      setErrorMessage(null);
 
-    // Clean any previous instance first
-    const cleanupEmulator = () => {
-      const oldEmulator = w.EJS_emulator;
+      // Clean up previous instance before creating a new one
+      if (nostalgistRef.current) {
+        try {
+          nostalgistRef.current.exit({ removeCanvas: false });
+        } catch {}
+        nostalgistRef.current = null;
+      }
+
       try {
-        if (oldEmulator && typeof oldEmulator.pause === 'function') {
-          oldEmulator.pause();
+        const { Nostalgist } = await import('nostalgist');
+        if (isCancelled) return;
+
+        setLoadingStatus(`Iniciando ${selectedCore === 'snes9x2010' ? 'SNES9x 2010' : 'SNES9x 2005'} (60 FPS)...`);
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        // Ensure absolute URL if given a relative path for ROM
+        let romTarget: string | Blob = romSourceUrl;
+        if (
+          typeof romSourceUrl === 'string' &&
+          !romSourceUrl.startsWith('http://') &&
+          !romSourceUrl.startsWith('https://') &&
+          !romSourceUrl.startsWith('blob:') &&
+          !romSourceUrl.startsWith('data:')
+        ) {
+          romTarget = new URL(romSourceUrl, window.location.origin).href;
         }
-        oldEmulator?.callEvent?.('exit');
-      } catch {}
-      try {
-        if (oldEmulator?.audio?.context && oldEmulator.audio.context.state !== 'closed') {
-          oldEmulator.audio.context.close().catch(() => {});
+
+        const instance = await Nostalgist.launch({
+          core: selectedCore,
+          rom: romTarget,
+          element: canvas,
+          size: 'auto',
+          resolveCoreJs: (c) => `/cores/${c}_libretro.js`,
+          resolveCoreWasm: (c) => `/cores/${c}_libretro.wasm`,
+          retroarchConfig: {
+            video_vsync: false,
+            rewind_enable: false,
+            audio_latency: 64,
+            video_smooth: false,
+            video_adaptive_vsync: false,
+            // Explicit button binding for zero-latency touch and keyboard controls
+            input_player1_a: 'x',
+            input_player1_b: 'z',
+            input_player1_x: 's',
+            input_player1_y: 'a',
+            input_player1_l: 'q',
+            input_player1_r: 'w',
+            input_player1_start: 'enter',
+            input_player1_select: 'rshift',
+            input_player1_up: 'up',
+            input_player1_down: 'down',
+            input_player1_left: 'left',
+            input_player1_right: 'right',
+          },
+          onLaunch: () => {
+            if (!isCancelled) {
+              setIsLoading(false);
+            }
+          },
+        });
+
+        if (isCancelled) {
+          instance.exit({ removeCanvas: false });
+          return;
         }
-      } catch {}
-      try {
-        if (oldEmulator) {
-          oldEmulator.__cgzDisposed = true;
-          if (oldEmulator.rafId) cancelAnimationFrame(oldEmulator.rafId);
-          if (
-            Array.isArray(oldEmulator.listeners) &&
-            typeof oldEmulator.removeEventListener === 'function'
-          ) {
-            oldEmulator.removeEventListener([...oldEmulator.listeners]);
-            oldEmulator.listeners = [];
-          }
-          if (oldEmulator.resetTimeout) clearTimeout(oldEmulator.resetTimeout);
-          if (oldEmulator.msgTimeout) clearTimeout(oldEmulator.msgTimeout);
-          oldEmulator.textElem = document.createElement('span');
-          if (oldEmulator.gameManager) {
-            oldEmulator.gameManager.simulateInput = () => {};
-          } else {
-            oldEmulator.gameManager = { simulateInput: () => {} };
-          }
+
+        nostalgistRef.current = instance;
+        setIsLoading(false);
+      } catch (err: any) {
+        console.error('Falha ao iniciar Nostalgist.js:', err);
+        if (!isCancelled) {
+          setErrorMessage(err?.message || 'Falha ao carregar o emulador WebAssembly.');
+          setIsLoading(false);
         }
-      } catch {}
-      gameEl.replaceChildren();
+      }
     };
 
-    cleanupEmulator();
-
-    // Purge any stale, corrupt, or lag-inducing settings from previous visits
-    try {
-      localStorage.removeItem('ejs-snes9x');
-      localStorage.removeItem('ejs-settings');
-      localStorage.removeItem('ejs_snes_settings');
-    } catch {}
-
-    w.EJS_player = '#game';
-    w.EJS_gameName = fallbackGame.title;
-    w.EJS_gameUrl = romSourceUrl;
-    w.EJS_core = 'snes';
-    w.EJS_pathtodata = SITE_CONFIG.emulatorDataCdn;
-    w.EJS_startOnLoaded = true;
-    w.EJS_volume = 0.5;
-    w.EJS_language = 'pt-BR';
-    w.EJS_threads = false;
-    w.EJS_forceLegacyCores = isIOS ? true : undefined;
-    w.EJS_cacheDecompressedCores = true;
-    w.EJS_forceTouchControls = false;
-    w.EJS_disableLocalStorage = true;
-    w.EJS_defaultOptions = {
-      shader: 'disabled',
-      rewind: 'disabled',
-      vsync: 'disabled',
-    };
-    delete w.EJS_VirtualGamepadSettings;
-
-    const handleGameStart = () => {
-      try {
-        const emu = w.EJS_emulator;
-        if (emu) {
-          if (typeof emu.toggleVirtualGamepad === 'function') {
-            emu.toggleVirtualGamepad(false);
-          }
-          if (emu.menu && typeof emu.menu.close === 'function') {
-            requestAnimationFrame(() => emu.menu?.close?.());
-          }
-          if (typeof emu.handleResize === 'function') {
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => emu.handleResize?.());
-            });
-          }
-        }
-      } catch {}
-    };
-
-    w.EJS_onGameStart = handleGameStart;
-
-    const loaderScript = document.createElement('script');
-    loaderScript.src = `${SITE_CONFIG.emulatorDataCdn}loader.js?v=4.2.1-safari-autostart-1&recovery=${recoveryKey}`;
-    loaderScript.async = true;
-    document.body.appendChild(loaderScript);
+    startEmulator();
 
     return () => {
-      if (w.EJS_onGameStart === handleGameStart) {
-        w.EJS_onGameStart = undefined;
+      isCancelled = true;
+      if (nostalgistRef.current) {
+        try {
+          nostalgistRef.current.exit({ removeCanvas: false });
+        } catch {}
+        nostalgistRef.current = null;
       }
-      loaderScript.remove();
-      cleanupEmulator();
-      w.EJS_player = undefined;
-      w.EJS_gameUrl = undefined;
-      w.EJS_core = undefined;
-      w.EJS_emulator = undefined;
     };
-  }, [romSourceUrl, recoveryKey, fallbackGame.title]);
+  }, [romSourceUrl, recoveryKey, selectedCore]);
 
-  // Keep WebGL canvas smoothly sized on orientation changes or control toggling with debouncing (no ResizeObserver thrashing!)
+  // Keep WebGL canvas smoothly sized on orientation changes or control toggling with debouncing
   useEffect(() => {
     let timeoutId: any = null;
 
     const triggerResize = () => {
       if (timeoutId) clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
-        const w = window as any;
-        w.EJS_emulator?.handleResize?.();
+        try {
+          if (nostalgistRef.current && canvasRef.current) {
+            const rect = canvasRef.current.parentElement?.getBoundingClientRect();
+            if (rect && rect.width > 0 && rect.height > 0) {
+              nostalgistRef.current.resize({
+                width: Math.floor(rect.width),
+                height: Math.floor(rect.height),
+              });
+            }
+          }
+        } catch {}
       }, 150);
     };
 
@@ -249,12 +275,12 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
     };
   }, [isLandscape, showControls]);
 
-  // Zero-re-render direct input to EmulatorJS gameManager in the same window
+  // Zero-re-render direct input to Nostalgist / RetroArch
   const sendGamepadInput = useCallback((btn: SnesButtonKey, pressed: boolean) => {
     if (Boolean(pressedStateRef.current[btn]) === pressed) return;
     pressedStateRef.current[btn] = pressed;
 
-    // Update visual button active state directly in DOM (0 React re-renders!)
+    // Update visual button active state directly in DOM (0 React re-renders)
     const root = padRootRef.current;
     if (root) {
       const nodes = root.querySelectorAll<HTMLElement>(`[data-pad-btn="${btn}"]`);
@@ -263,37 +289,34 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
       }
     }
 
-    const meta = SNES_INPUTS[btn];
-    const w = window as any;
-    const emu = w.EJS_emulator;
+    const nBtn = NOSTALGIST_BUTTON_MAP[btn];
+    const emu = nostalgistRef.current;
 
-    // Only resume audio if suspended/interrupted (never spam resume on running audio!)
+    // Unlock / resume AudioContext on user touch if suspended
     if (pressed && emu) {
       try {
-        const ctx1 = emu.audio?.context;
-        if (ctx1 && (ctx1.state === 'suspended' || ctx1.state === 'interrupted')) {
-          ctx1.resume().catch(() => {});
-        }
-        const ctx2 = emu.Module?.SDL2?.audioContext;
-        if (ctx2 && (ctx2.state === 'suspended' || ctx2.state === 'interrupted')) {
-          ctx2.resume().catch(() => {});
-        }
-        const ctx3 = emu.Module?.AL?.currentCtx?.audioCtx;
-        if (ctx3 && (ctx3.state === 'suspended' || ctx3.state === 'interrupted')) {
-          ctx3.resume().catch(() => {});
+        const al = emu.getEmscriptenAL?.();
+        const ctx = al?.currentCtx?.audioCtx;
+        if (ctx && (ctx.state === 'suspended' || ctx.state === 'interrupted')) {
+          ctx.resume().catch(() => {});
         }
       } catch {}
     }
 
-    let handled = false;
-    try {
-      if (emu?.gameManager && typeof emu.gameManager.simulateInput === 'function') {
-        emu.gameManager.simulateInput(0, meta.index, pressed ? 1 : 0);
-        handled = true;
-      }
-    } catch {}
+    // Direct programmatic button press/release into Nostalgist
+    if (nBtn && emu) {
+      try {
+        if (pressed) {
+          emu.pressDown(nBtn);
+        } else {
+          emu.pressUp(nBtn);
+        }
+      } catch {}
+    }
 
-    if (!handled && meta.key) {
+    // Dispatch synthetic keyboard event to ensure full capture by RetroArch's Emscripten canvas listeners
+    const meta = SNES_INPUTS[btn];
+    if (meta && meta.code) {
       const evType = pressed ? 'keydown' : 'keyup';
       const keyEv = new KeyboardEvent(evType, {
         key: meta.key,
@@ -303,10 +326,57 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
         bubbles: true,
         cancelable: true,
       });
-      document.dispatchEvent(keyEv);
+      canvasRef.current?.dispatchEvent(keyEv);
       window.dispatchEvent(keyEv);
     }
   }, []);
+
+  const handleSaveState = async () => {
+    if (!nostalgistRef.current) return;
+    try {
+      showToast('💾 Salvando estado...');
+      const res = await nostalgistRef.current.saveState();
+      if (res && res.state) {
+        await saveStateToIDB(fallbackGame.id, res.state);
+        showToast('✅ Estado salvo com sucesso!');
+      } else {
+        showToast('⚠️ Falha ao obter dados do estado');
+      }
+    } catch (err) {
+      console.error('Falha ao salvar estado:', err);
+      showToast('❌ Erro ao salvar estado');
+    }
+  };
+
+  const handleLoadState = async () => {
+    if (!nostalgistRef.current) return;
+    try {
+      showToast('📂 Buscando estado...');
+      const blob = await loadStateFromIDB(fallbackGame.id);
+      if (!blob) {
+        showToast('ℹ️ Nenhum save state encontrado');
+        return;
+      }
+      await nostalgistRef.current.loadState(blob);
+      showToast('✅ Estado carregado com sucesso!');
+    } catch (err) {
+      console.error('Falha ao carregar estado:', err);
+      showToast('❌ Erro ao carregar estado');
+    }
+  };
+
+  const handleRestart = () => {
+    if (!nostalgistRef.current) {
+      setRecoveryKey((k) => k + 1);
+      return;
+    }
+    try {
+      nostalgistRef.current.restart();
+      showToast('🔄 Jogo reiniciado');
+    } catch {
+      setRecoveryKey((k) => k + 1);
+    }
+  };
 
   const updateDpadFromTouch = useCallback(
     (clientX: number, clientY: number) => {
@@ -483,44 +553,9 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
       ref={padRootRef}
       className="fixed inset-0 w-screen h-[100dvh] bg-[#0b0914] text-white flex flex-col overflow-hidden select-none"
     >
-      <style>{`
-        .clean-emulator-stage #game {
-          width: 100% !important;
-          height: 100% !important;
-          display: flex !important;
-          align-items: center !important;
-          justify-content: center !important;
-        }
-        .clean-emulator-stage #game canvas {
-          display: block !important;
-          max-width: 100% !important;
-          max-height: 100% !important;
-          object-fit: contain !important;
-          image-rendering: pixelated !important;
-          image-rendering: crisp-edges !important;
-          transform: translateZ(0);
-          will-change: transform;
-        }
-        /* Hide EmulatorJS built-in overlapping virtual gamepad so the game screen is 100% unobstructed */
-        .clean-emulator-stage .ejs_virtual_gamepad_parent,
-        .clean-emulator-stage .ejs_virtual_gamepad,
-        .clean-emulator-stage .ejs_dpad_main,
-        .clean-emulator-stage div[class*="virtual_gamepad"],
-        .clean-emulator-stage div[class*="virtualpad"],
-        .clean-emulator-stage div[class*="virtualGamepad"],
-        .clean-emulator-stage div[class*="ejs_virtual"] {
-          display: none !important;
-          opacity: 0 !important;
-          visibility: hidden !important;
-          pointer-events: none !important;
-          width: 0 !important;
-          height: 0 !important;
-        }
-      `}</style>
-
       {/* Ultra-slim Top Console Bar */}
       <header className="h-10 px-3 bg-[#181527] border-b-2 border-black flex items-center justify-between gap-2 shrink-0 z-20 shadow-md">
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
           <button
             type="button"
             onClick={() => router.push('/pt/snes-games')}
@@ -533,18 +568,46 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
           <h1 className="font-pixel text-[10px] text-amber-400 truncate drop-shadow-[1px_1px_0_#000]">
             {fallbackGame.title}
           </h1>
+
+          <span className="hidden md:inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-pixel bg-emerald-950 text-emerald-400 border border-emerald-500/40">
+            WASM 60FPS
+          </span>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Save State */}
           <button
             type="button"
-            onClick={() => setRecoveryKey((k) => k + 1)}
+            onClick={handleSaveState}
+            className="retro-btn px-2 py-1 rounded-lg bg-[#27233c] hover:bg-[#342f4e] font-pixel text-[8px] sm:text-[9px] text-gray-200 border-2 border-black retro-shadow-sm transition-all flex items-center gap-1"
+            title="Salvar Estado (Save State)"
+          >
+            <span>💾</span>
+            <span className="hidden sm:inline">SALVAR</span>
+          </button>
+
+          {/* Load State */}
+          <button
+            type="button"
+            onClick={handleLoadState}
+            className="retro-btn px-2 py-1 rounded-lg bg-[#27233c] hover:bg-[#342f4e] font-pixel text-[8px] sm:text-[9px] text-gray-200 border-2 border-black retro-shadow-sm transition-all flex items-center gap-1"
+            title="Carregar Estado (Load State)"
+          >
+            <span>📂</span>
+            <span className="hidden sm:inline">CARREGAR</span>
+          </button>
+
+          {/* Restart */}
+          <button
+            type="button"
+            onClick={handleRestart}
             className="retro-btn px-2 py-1 rounded-lg bg-[#27233c] hover:bg-[#342f4e] font-pixel text-[9px] text-gray-200 border-2 border-black retro-shadow-sm transition-all"
             title="Reiniciar Jogo"
           >
             🔄
           </button>
 
+          {/* Controls Toggle */}
           <button
             type="button"
             onClick={() => setShowControls((v) => !v)}
@@ -560,14 +623,13 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
       </header>
 
       {/* Unified Console Body:
-          #game is ALWAYS the first child in the React tree (reordered via CSS flex order-1 / order-2)
-          so rotating the phone or toggling Pad ON/OFF never unmounts the running emulator! */}
+          Canvas is ALWAYS mounted in DOM so rotating the phone or toggling Pad ON/OFF never restarts emulation! */}
       <div
         className={`flex-1 min-h-0 w-full flex ${
           isHandheldLandscape ? 'flex-row items-stretch' : 'flex-col'
         } bg-[#09080f] overflow-hidden`}
       >
-        {/* 1. Native Unobstructed Game Screen Host */}
+        {/* 1. Native Unobstructed 16-Bit WebAssembly Game Screen */}
         <div
           key="emulator-stage-host"
           ref={stageContainerRef}
@@ -579,7 +641,64 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
                 : 'order-1 flex-1 min-h-0 w-full'
           }`}
         >
-          <div id="game" className="w-full h-full" />
+          <canvas
+            ref={canvasRef}
+            id="game-canvas"
+            className="w-full h-full max-w-full max-h-full object-contain"
+            style={{
+              imageRendering: 'pixelated',
+              aspectRatio: '4/3',
+              transform: 'translateZ(0)',
+              outline: 'none',
+            }}
+            tabIndex={0}
+          />
+
+          {/* Loading Overlay */}
+          {isLoading && (
+            <div className="absolute inset-0 bg-[#0b0914]/90 backdrop-blur-sm flex flex-col items-center justify-center p-4 z-30 pointer-events-none">
+              <div className="w-12 h-12 rounded-full border-4 border-purple-500/30 border-t-amber-400 animate-spin mb-4" />
+              <p className="font-pixel text-[11px] text-amber-400 tracking-wider text-center drop-shadow-[1px_1px_0_#000] mb-2">
+                CARTUCHOS ZONE
+              </p>
+              <p className="text-xs text-purple-200/90 text-center animate-pulse">
+                {loadingStatus}
+              </p>
+            </div>
+          )}
+
+          {/* Error Overlay */}
+          {errorMessage && (
+            <div className="absolute inset-0 bg-red-950/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 z-30 text-center">
+              <p className="font-pixel text-xs text-rose-300 mb-2">ERRO AO INICIAR JOGO</p>
+              <p className="text-xs text-gray-300 max-w-sm mb-4">{errorMessage}</p>
+              <div className="flex flex-wrap gap-2 justify-center">
+                <button
+                  type="button"
+                  onClick={() => setRecoveryKey((k) => k + 1)}
+                  className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-gray-950 font-pixel text-[10px]"
+                >
+                  TENTAR NOVAMENTE
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedCore((c) => (c === 'snes9x2010' ? 'snes9x2005' : 'snes9x2010'))
+                  }
+                  className="px-3 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-600 text-white font-pixel text-[10px]"
+                >
+                  MUDAR CORE ({selectedCore === 'snes9x2010' ? 'SNES9X 2005' : 'SNES9X 2010'})
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Retro Toast Message */}
+          {toastMessage && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-[#1b172c]/95 border-2 border-purple-400/80 px-4 py-1.5 rounded-full text-xs font-pixel text-amber-300 shadow-xl z-40 animate-fade-in pointer-events-none">
+              {toastMessage}
+            </div>
+          )}
         </div>
 
         {/* 2. Controller Grips / Deck */}
