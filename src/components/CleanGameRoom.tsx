@@ -63,7 +63,7 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
     imageUrl: 'https://classicgamezone.com/games/covers/snes/super-metroid.jpg',
   };
 
-  // Resolve standard catalog ROM URL synchronously on first render so there is zero delay
+  // Resolve standard catalog ROM URL synchronously on first render
   const [romSourceUrl, setRomSourceUrl] = useState<string>(() =>
     initialGame ? resolveRomUrl(initialGame) : ''
   );
@@ -93,6 +93,22 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
     toastTimeoutRef.current = setTimeout(() => {
       setToastMessage(null);
     }, 2200);
+  }, []);
+
+  // Unlock WebAudio immediately on first screen touch
+  const unlockAudioContext = useCallback(() => {
+    try {
+      const w = window as any;
+      if (w.__RETROARCH_AUDIO_CONTEXT && w.__RETROARCH_AUDIO_CONTEXT.state === 'suspended') {
+        w.__RETROARCH_AUDIO_CONTEXT.resume().catch(() => {});
+      }
+      const emu = nostalgistRef.current;
+      const al = emu?.getEmscriptenAL?.();
+      const ctx = al?.currentCtx?.audioCtx;
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -142,7 +158,7 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
     };
   }, [fallbackGame.id]);
 
-  // Mount Nostalgist.js WebAssembly emulator directly onto canvasRef with snes9x2010 core
+  // Mount Nostalgist.js WebAssembly emulator directly onto canvasRef
   useEffect(() => {
     if (!romSourceUrl || !canvasRef.current) return;
     let isCancelled = false;
@@ -189,11 +205,16 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
           resolveCoreJs: (c) => `/cores/${c}_libretro.js`,
           resolveCoreWasm: (c) => `/cores/${c}_libretro.wasm`,
           retroarchConfig: {
-            video_vsync: false,
-            rewind_enable: false,
-            audio_latency: 64,
+            video_vsync: true,
+            video_refresh_rate: 60.0,
+            audio_sync: true,
+            audio_rate_control: true,
+            audio_rate_control_delta: 0.005,
+            audio_max_timing_skew: 0.05,
+            audio_latency: 96,
+            audio_out_rate: 48000,
             video_smooth: false,
-            video_adaptive_vsync: false,
+            rewind_enable: false,
             // Explicit button binding for zero-latency touch and keyboard controls
             input_player1_a: 'x',
             input_player1_b: 'z',
@@ -276,60 +297,57 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
   }, [isLandscape, showControls]);
 
   // Zero-re-render direct input to Nostalgist / RetroArch
-  const sendGamepadInput = useCallback((btn: SnesButtonKey, pressed: boolean) => {
-    if (Boolean(pressedStateRef.current[btn]) === pressed) return;
-    pressedStateRef.current[btn] = pressed;
+  const sendGamepadInput = useCallback(
+    (btn: SnesButtonKey, pressed: boolean) => {
+      if (Boolean(pressedStateRef.current[btn]) === pressed) return;
+      pressedStateRef.current[btn] = pressed;
 
-    // Update visual button active state directly in DOM (0 React re-renders)
-    const root = padRootRef.current;
-    if (root) {
-      const nodes = root.querySelectorAll<HTMLElement>(`[data-pad-btn="${btn}"]`);
-      for (let i = 0; i < nodes.length; i++) {
-        nodes[i].setAttribute('data-active', pressed ? 'true' : 'false');
+      // Update visual button active state directly in DOM (0 React re-renders)
+      const root = padRootRef.current;
+      if (root) {
+        const nodes = root.querySelectorAll<HTMLElement>(`[data-pad-btn="${btn}"]`);
+        for (let i = 0; i < nodes.length; i++) {
+          nodes[i].setAttribute('data-active', pressed ? 'true' : 'false');
+        }
       }
-    }
 
-    const nBtn = NOSTALGIST_BUTTON_MAP[btn];
-    const emu = nostalgistRef.current;
+      const nBtn = NOSTALGIST_BUTTON_MAP[btn];
+      const emu = nostalgistRef.current;
 
-    // Unlock / resume AudioContext on user touch if suspended
-    if (pressed && emu) {
-      try {
-        const al = emu.getEmscriptenAL?.();
-        const ctx = al?.currentCtx?.audioCtx;
-        if (ctx && (ctx.state === 'suspended' || ctx.state === 'interrupted')) {
-          ctx.resume().catch(() => {});
-        }
-      } catch {}
-    }
+      // Unlock AudioContext on first touch
+      if (pressed) {
+        unlockAudioContext();
+      }
 
-    // Direct programmatic button press/release into Nostalgist
-    if (nBtn && emu) {
-      try {
-        if (pressed) {
-          emu.pressDown(nBtn);
-        } else {
-          emu.pressUp(nBtn);
-        }
-      } catch {}
-    }
+      // Direct programmatic button press/release into Nostalgist
+      if (nBtn && emu) {
+        try {
+          if (pressed) {
+            emu.pressDown(nBtn);
+          } else {
+            emu.pressUp(nBtn);
+          }
+        } catch {}
+      }
 
-    // Dispatch synthetic keyboard event to ensure full capture by RetroArch's Emscripten canvas listeners
-    const meta = SNES_INPUTS[btn];
-    if (meta && meta.code) {
-      const evType = pressed ? 'keydown' : 'keyup';
-      const keyEv = new KeyboardEvent(evType, {
-        key: meta.key,
-        code: meta.code,
-        keyCode: meta.keyCode,
-        which: meta.keyCode,
-        bubbles: true,
-        cancelable: true,
-      });
-      canvasRef.current?.dispatchEvent(keyEv);
-      window.dispatchEvent(keyEv);
-    }
-  }, []);
+      // Dispatch synthetic keyboard event to ensure full capture by RetroArch's Emscripten canvas listeners
+      const meta = SNES_INPUTS[btn];
+      if (meta && meta.code) {
+        const evType = pressed ? 'keydown' : 'keyup';
+        const keyEv = new KeyboardEvent(evType, {
+          key: meta.key,
+          code: meta.code,
+          keyCode: meta.keyCode,
+          which: meta.keyCode,
+          bubbles: true,
+          cancelable: true,
+        });
+        canvasRef.current?.dispatchEvent(keyEv);
+        window.dispatchEvent(keyEv);
+      }
+    },
+    [unlockAudioContext]
+  );
 
   const handleSaveState = async () => {
     if (!nostalgistRef.current) return;
@@ -448,7 +466,7 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
   });
 
   // D-Pad component reused in both Portrait and Landscape docks
-  const renderDpad = (sizeClass = 'w-36 h-36') => (
+  const renderDpad = (sizeClass = 'w-32 h-32 sm:w-36 sm:h-36') => (
     <div
       ref={dpadRef}
       onPointerDown={(e) => {
@@ -477,37 +495,37 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
       <div
         data-pad-btn="UP"
         data-active="false"
-        className="absolute top-1.5 left-1/2 -translate-x-1/2 w-11 h-11 rounded-t-xl flex items-center justify-center font-bold text-base border bg-[#13101f] text-gray-300 border-purple-500/30 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200"
+        className="absolute top-1 left-1/2 -translate-x-1/2 w-10 sm:w-11 h-10 sm:h-11 rounded-t-xl flex items-center justify-center font-bold text-sm sm:text-base border bg-[#13101f] text-gray-300 border-purple-500/30 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200"
       >
         ▲
       </div>
       <div
         data-pad-btn="DOWN"
         data-active="false"
-        className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-11 h-11 rounded-b-xl flex items-center justify-center font-bold text-base border bg-[#13101f] text-gray-300 border-purple-500/30 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200"
+        className="absolute bottom-1 left-1/2 -translate-x-1/2 w-10 sm:w-11 h-10 sm:h-11 rounded-b-xl flex items-center justify-center font-bold text-sm sm:text-base border bg-[#13101f] text-gray-300 border-purple-500/30 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200"
       >
         ▼
       </div>
       <div
         data-pad-btn="LEFT"
         data-active="false"
-        className="absolute left-1.5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-l-xl flex items-center justify-center font-bold text-base border bg-[#13101f] text-gray-300 border-purple-500/30 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200"
+        className="absolute left-1 top-1/2 -translate-y-1/2 w-10 sm:w-11 h-10 sm:h-11 rounded-l-xl flex items-center justify-center font-bold text-sm sm:text-base border bg-[#13101f] text-gray-300 border-purple-500/30 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200"
       >
         ◀
       </div>
       <div
         data-pad-btn="RIGHT"
         data-active="false"
-        className="absolute right-1.5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-r-xl flex items-center justify-center font-bold text-base border bg-[#13101f] text-gray-300 border-purple-500/30 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200"
+        className="absolute right-1 top-1/2 -translate-y-1/2 w-10 sm:w-11 h-10 sm:h-11 rounded-r-xl flex items-center justify-center font-bold text-sm sm:text-base border bg-[#13101f] text-gray-300 border-purple-500/30 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200"
       >
         ▶
       </div>
-      <div className="w-8 h-8 rounded-full bg-[#191528] border border-purple-500/20 z-10" />
+      <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#191528] border border-purple-500/20 z-10" />
     </div>
   );
 
   // Action Diamond (X, Y, A, B) reused in both Portrait and Landscape docks
-  const renderActionButtons = (sizeClass = 'w-36 h-36') => (
+  const renderActionButtons = (sizeClass = 'w-32 h-32 sm:w-36 sm:h-36') => (
     <div
       className={`relative ${sizeClass} rounded-full bg-[#221e35] border-2 border-purple-500/40 shadow-xl touch-none select-none shrink-0`}
     >
@@ -515,7 +533,7 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
       <button
         type="button"
         {...bindButtonEvents('X')}
-        className="absolute top-1.5 left-1/2 -translate-x-1/2 w-11 h-11 rounded-full font-extrabold text-sm text-white border-2 shadow-md bg-blue-600 border-blue-300/60 data-[active=true]:bg-blue-400 data-[active=true]:border-white data-[active=true]:scale-90"
+        className="absolute top-1 left-1/2 -translate-x-1/2 w-10 sm:w-11 h-10 sm:h-11 rounded-full font-extrabold text-xs sm:text-sm text-white border-2 shadow-md bg-blue-600 border-blue-300/60 data-[active=true]:bg-blue-400 data-[active=true]:border-white data-[active=true]:scale-90"
       >
         X
       </button>
@@ -523,7 +541,7 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
       <button
         type="button"
         {...bindButtonEvents('Y')}
-        className="absolute left-1.5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full font-extrabold text-sm text-white border-2 shadow-md bg-emerald-600 border-emerald-300/60 data-[active=true]:bg-emerald-400 data-[active=true]:border-white data-[active=true]:scale-90"
+        className="absolute left-1 top-1/2 -translate-y-1/2 w-10 sm:w-11 h-10 sm:h-11 rounded-full font-extrabold text-xs sm:text-sm text-white border-2 shadow-md bg-emerald-600 border-emerald-300/60 data-[active=true]:bg-emerald-400 data-[active=true]:border-white data-[active=true]:scale-90"
       >
         Y
       </button>
@@ -531,7 +549,7 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
       <button
         type="button"
         {...bindButtonEvents('A')}
-        className="absolute right-1.5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full font-extrabold text-sm text-white border-2 shadow-md bg-rose-600 border-rose-300/60 data-[active=true]:bg-rose-400 data-[active=true]:border-white data-[active=true]:scale-90"
+        className="absolute right-1 top-1/2 -translate-y-1/2 w-10 sm:w-11 h-10 sm:h-11 rounded-full font-extrabold text-xs sm:text-sm text-white border-2 shadow-md bg-rose-600 border-rose-300/60 data-[active=true]:bg-rose-400 data-[active=true]:border-white data-[active=true]:scale-90"
       >
         A
       </button>
@@ -539,7 +557,7 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
       <button
         type="button"
         {...bindButtonEvents('B')}
-        className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-11 h-11 rounded-full font-extrabold text-sm text-gray-950 border-2 shadow-md bg-amber-400 border-yellow-200/80 data-[active=true]:bg-yellow-300 data-[active=true]:border-white data-[active=true]:scale-90"
+        className="absolute bottom-1 left-1/2 -translate-x-1/2 w-10 sm:w-11 h-10 sm:h-11 rounded-full font-extrabold text-xs sm:text-sm text-gray-950 border-2 shadow-md bg-amber-400 border-yellow-200/80 data-[active=true]:bg-yellow-300 data-[active=true]:border-white data-[active=true]:scale-90"
       >
         B
       </button>
@@ -551,57 +569,68 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
   return (
     <div
       ref={padRootRef}
+      onPointerDownCapture={unlockAudioContext}
       className="fixed inset-0 w-screen h-[100dvh] bg-[#0b0914] text-white flex flex-col overflow-hidden select-none"
     >
       {/* Ultra-slim Top Console Bar */}
-      <header className="h-10 px-3 bg-[#181527] border-b-2 border-black flex items-center justify-between gap-2 shrink-0 z-20 shadow-md">
-        <div className="flex items-center gap-2 min-w-0">
+      <header className="h-10 px-3 bg-[#181527] border-b-2 border-black flex items-center justify-between gap-1.5 shrink-0 z-20 shadow-md">
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
           <button
             type="button"
             onClick={() => router.push('/pt/snes-games')}
-            className="retro-btn px-2.5 py-1 rounded-lg bg-[#27233c] hover:bg-purple-600 font-pixel text-[8px] text-gray-200 border-2 border-black flex items-center gap-1 shrink-0 retro-shadow-sm transition-all"
+            className="retro-btn px-2 py-1 rounded-lg bg-[#27233c] hover:bg-purple-600 font-pixel text-[8px] text-gray-200 border-2 border-black flex items-center gap-1 shrink-0 retro-shadow-sm transition-all"
           >
             <span>◀</span>
-            <span>CATÁLOGO</span>
+            <span className="hidden sm:inline">CATÁLOGO</span>
           </button>
 
-          <h1 className="font-pixel text-[10px] text-amber-400 truncate drop-shadow-[1px_1px_0_#000]">
+          <h1 className="font-pixel text-[9px] sm:text-[10px] text-amber-400 truncate drop-shadow-[1px_1px_0_#000]">
             {fallbackGame.title}
           </h1>
-
-          <span className="hidden md:inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-pixel bg-emerald-950 text-emerald-400 border border-emerald-500/40">
-            WASM 60FPS
-          </span>
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          {/* Core Switcher Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              const next = selectedCore === 'snes9x2010' ? 'snes9x2005' : 'snes9x2010';
+              setSelectedCore(next);
+              showToast(`⚡ Núcleo: ${next === 'snes9x2010' ? 'SNES9x 2010' : 'SNES9x 2005'}`);
+            }}
+            className="retro-btn px-1.5 sm:px-2 py-1 rounded-lg bg-[#27233c] hover:bg-purple-700 font-pixel text-[8px] text-amber-300 border-2 border-black retro-shadow-sm transition-all"
+            title="Alternar núcleo (SNES9X 2010 / 2005)"
+          >
+            ⚡ {selectedCore === 'snes9x2010' ? '2010' : '2005'}
+          </button>
+
           {/* Save State */}
           <button
             type="button"
             onClick={handleSaveState}
-            className="retro-btn px-2 py-1 rounded-lg bg-[#27233c] hover:bg-[#342f4e] font-pixel text-[8px] sm:text-[9px] text-gray-200 border-2 border-black retro-shadow-sm transition-all flex items-center gap-1"
+            className="retro-btn px-1.5 sm:px-2 py-1 rounded-lg bg-[#27233c] hover:bg-[#342f4e] font-pixel text-[8px] text-gray-200 border-2 border-black retro-shadow-sm transition-all flex items-center gap-1"
             title="Salvar Estado (Save State)"
           >
             <span>💾</span>
-            <span className="hidden sm:inline">SALVAR</span>
+            <span className="hidden md:inline">SALVAR</span>
           </button>
 
           {/* Load State */}
           <button
             type="button"
             onClick={handleLoadState}
-            className="retro-btn px-2 py-1 rounded-lg bg-[#27233c] hover:bg-[#342f4e] font-pixel text-[8px] sm:text-[9px] text-gray-200 border-2 border-black retro-shadow-sm transition-all flex items-center gap-1"
+            className="retro-btn px-1.5 sm:px-2 py-1 rounded-lg bg-[#27233c] hover:bg-[#342f4e] font-pixel text-[8px] text-gray-200 border-2 border-black retro-shadow-sm transition-all flex items-center gap-1"
             title="Carregar Estado (Load State)"
           >
             <span>📂</span>
-            <span className="hidden sm:inline">CARREGAR</span>
+            <span className="hidden md:inline">CARREGAR</span>
           </button>
 
           {/* Restart */}
           <button
             type="button"
             onClick={handleRestart}
-            className="retro-btn px-2 py-1 rounded-lg bg-[#27233c] hover:bg-[#342f4e] font-pixel text-[9px] text-gray-200 border-2 border-black retro-shadow-sm transition-all"
+            className="retro-btn px-1.5 sm:px-2 py-1 rounded-lg bg-[#27233c] hover:bg-[#342f4e] font-pixel text-[9px] text-gray-200 border-2 border-black retro-shadow-sm transition-all"
             title="Reiniciar Jogo"
           >
             🔄
@@ -611,13 +640,13 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
           <button
             type="button"
             onClick={() => setShowControls((v) => !v)}
-            className={`retro-btn px-2.5 py-1 rounded-lg font-pixel text-[8px] border-2 border-black transition-all ${
+            className={`retro-btn px-2 py-1 rounded-lg font-pixel text-[8px] border-2 border-black transition-all ${
               showControls
                 ? 'bg-emerald-600 border-black text-white retro-shadow-sm'
                 : 'bg-[#27233c] text-gray-400'
             }`}
           >
-            🎮 {showControls ? 'PAD ON' : 'PAD OFF'}
+            🎮 {showControls ? 'PAD' : 'OFF'}
           </button>
         </div>
       </header>
@@ -637,7 +666,7 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
             isHandheldLandscape
               ? 'order-2 flex-1 min-w-0 h-full'
               : showControls && isTouchDevice
-                ? 'order-1 w-full h-[46dvh] sm:h-[52dvh] shrink-0 border-b-2 border-purple-500/40'
+                ? 'order-1 w-full h-[45dvh] sm:h-[50dvh] shrink-0 border-b-2 border-purple-500/40'
                 : 'order-1 flex-1 min-h-0 w-full'
           }`}
         >
@@ -705,7 +734,7 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
         {isHandheldLandscape ? (
           <>
             {/* Left Controller Grip (order-1) */}
-            <div className="order-1 w-44 sm:w-48 bg-gradient-to-b from-[#1b172c] to-[#120f1d] border-r border-purple-500/30 p-2.5 flex flex-col items-center justify-between shrink-0 touch-none select-none">
+            <div className="order-1 w-44 sm:w-48 bg-gradient-to-b from-[#1b172c] to-[#120f1d] border-r border-purple-500/30 p-2.5 pb-6 flex flex-col items-center justify-between shrink-0 touch-none select-none">
               <button
                 type="button"
                 {...bindButtonEvents('L')}
@@ -714,9 +743,9 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
                 L
               </button>
 
-              {renderDpad('w-36 h-36')}
+              {renderDpad('w-32 h-32')}
 
-              <div className="flex items-center gap-2 pb-1">
+              <div className="flex flex-col items-center gap-1 pb-3">
                 <button
                   type="button"
                   {...bindButtonEvents('SELECT')}
@@ -724,11 +753,12 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
                 >
                   Select
                 </button>
+                <span className="text-[7px] font-pixel text-purple-300/60">SELECT</span>
               </div>
             </div>
 
             {/* Right Controller Grip (order-3) */}
-            <div className="order-3 w-44 sm:w-48 bg-gradient-to-b from-[#1b172c] to-[#120f1d] border-l border-purple-500/30 p-2.5 flex flex-col items-center justify-between shrink-0 touch-none select-none">
+            <div className="order-3 w-44 sm:w-48 bg-gradient-to-b from-[#1b172c] to-[#120f1d] border-l border-purple-500/30 p-2.5 pb-6 flex flex-col items-center justify-between shrink-0 touch-none select-none">
               <button
                 type="button"
                 {...bindButtonEvents('R')}
@@ -737,9 +767,9 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
                 R
               </button>
 
-              {renderActionButtons('w-36 h-36')}
+              {renderActionButtons('w-32 h-32')}
 
-              <div className="flex items-center gap-2 pb-1">
+              <div className="flex flex-col items-center gap-1 pb-3">
                 <button
                   type="button"
                   {...bindButtonEvents('START')}
@@ -747,60 +777,73 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
                 >
                   Start
                 </button>
+                <span className="text-[7px] font-pixel text-purple-300/60">START</span>
               </div>
             </div>
           </>
         ) : (
           showControls && (
             /* Portrait Bottom Dedicated SNES Physical Gamepad Deck (order-2) */
-            <div className="order-2 flex-1 min-h-0 w-full bg-gradient-to-b from-[#1c182c] to-[#110e1b] px-4 py-3 flex flex-col justify-between touch-none select-none">
+            <div className="order-2 flex-1 min-h-0 w-full bg-gradient-to-b from-[#1c182c] to-[#110e1b] px-3 sm:px-4 pt-2.5 pb-8 sm:pb-10 flex flex-col justify-between touch-none select-none">
               {/* Top Row: L & R Shoulder Buttons */}
               <div className="flex items-center justify-between gap-4">
                 <button
                   type="button"
                   {...bindButtonEvents('L')}
-                  className="w-28 h-10 rounded-t-2xl rounded-b-lg font-extrabold text-sm tracking-widest border-2 shadow-md bg-[#2a2440] text-gray-200 border-purple-400/40 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200 data-[active=true]:scale-95"
+                  className="w-24 sm:w-28 h-9 sm:h-10 rounded-t-2xl rounded-b-lg font-extrabold text-xs sm:text-sm tracking-widest border-2 shadow-md bg-[#2a2440] text-gray-200 border-purple-400/40 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200 data-[active=true]:scale-95"
                 >
                   L
                 </button>
 
-                <span className="text-[10px] font-extrabold tracking-widest uppercase text-purple-300/60">
+                <span className="text-[9px] sm:text-[10px] font-extrabold tracking-widest uppercase text-purple-300/60">
                   SUPER NINTENDO
                 </span>
 
                 <button
                   type="button"
                   {...bindButtonEvents('R')}
-                  className="w-28 h-10 rounded-t-2xl rounded-b-lg font-extrabold text-sm tracking-widest border-2 shadow-md bg-[#2a2440] text-gray-200 border-purple-400/40 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200 data-[active=true]:scale-95"
+                  className="w-24 sm:w-28 h-9 sm:h-10 rounded-t-2xl rounded-b-lg font-extrabold text-xs sm:text-sm tracking-widest border-2 shadow-md bg-[#2a2440] text-gray-200 border-purple-400/40 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200 data-[active=true]:scale-95"
                 >
                   R
                 </button>
               </div>
 
-              {/* Middle Row: D-Pad (Left) and X/Y/A/B Diamond (Right) */}
-              <div className="flex items-center justify-between gap-2 my-auto">
-                {renderDpad('w-36 h-36 sm:w-40 sm:h-40')}
-                {renderActionButtons('w-36 h-36 sm:w-40 sm:h-40')}
+              {/* Middle Row: D-Pad (Left), Center-Elevated SELECT & START (Thumb-level), Action Buttons (Right) */}
+              <div className="flex items-center justify-between gap-1 sm:gap-2 my-auto px-1">
+                {renderDpad('w-32 h-32 sm:w-36 sm:h-36')}
+
+                {/* Center Elevated SELECT & START: Sits high, authentic 16-bit SNES angled pill layout */}
+                <div className="flex flex-col items-center justify-center gap-2 px-1">
+                  <div className="flex items-center justify-center gap-2 sm:gap-3">
+                    <div className="flex flex-col items-center gap-1">
+                      <button
+                        type="button"
+                        {...bindButtonEvents('SELECT')}
+                        className="w-11 sm:w-12 h-6 sm:h-7 rounded-full text-[9px] font-extrabold uppercase tracking-wider border shadow-md bg-[#2a2440] text-gray-200 border-purple-400/40 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200 data-[active=true]:scale-95 -rotate-25 transition-transform"
+                      >
+                        Select
+                      </button>
+                      <span className="text-[7px] font-pixel text-purple-300/70 tracking-tighter">SELECT</span>
+                    </div>
+
+                    <div className="flex flex-col items-center gap-1">
+                      <button
+                        type="button"
+                        {...bindButtonEvents('START')}
+                        className="w-11 sm:w-12 h-6 sm:h-7 rounded-full text-[9px] font-extrabold uppercase tracking-wider border shadow-md bg-[#2a2440] text-gray-200 border-purple-400/40 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200 data-[active=true]:scale-95 -rotate-25 transition-transform"
+                      >
+                        Start
+                      </button>
+                      <span className="text-[7px] font-pixel text-purple-300/70 tracking-tighter">START</span>
+                    </div>
+                  </div>
+                </div>
+
+                {renderActionButtons('w-32 h-32 sm:w-36 sm:h-36')}
               </div>
 
-              {/* Bottom Row: SELECT & START Buttons */}
-              <div className="flex items-center justify-center gap-8 pb-1">
-                <button
-                  type="button"
-                  {...bindButtonEvents('SELECT')}
-                  className="px-5 py-1.5 rounded-full text-xs font-extrabold uppercase tracking-wider border shadow bg-[#2a2440] text-gray-200 border-purple-400/40 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200 data-[active=true]:scale-95"
-                >
-                  Select
-                </button>
-
-                <button
-                  type="button"
-                  {...bindButtonEvents('START')}
-                  className="px-5 py-1.5 rounded-full text-xs font-extrabold uppercase tracking-wider border shadow bg-[#2a2440] text-gray-200 border-purple-400/40 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200 data-[active=true]:scale-95"
-                >
-                  Start
-                </button>
-              </div>
+              {/* Bottom Safe Zone: Guarantees full clearance from Netlify badge and phone gesture pill */}
+              <div className="h-6 sm:h-8 shrink-0" />
             </div>
           )
         )}
