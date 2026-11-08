@@ -78,7 +78,7 @@ export function resolveRomUrl(game: Game): string {
       return game.romUrl;
     }
   }
-  return `/roms/${encodeURIComponent(game.id)}.smc`;
+  return `/roms/${encodeURIComponent(game.id)}.smc?v=snes-pure-v3`;
 }
 
 export function getAllCatalogGames(): Game[] {

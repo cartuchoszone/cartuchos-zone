@@ -23,7 +23,7 @@ export async function HEAD(
     .replace(/\.(smc|sfc|zip)$/i, '')
     .replace(/[^a-zA-Z0-9_-]/g, '');
 
-  return NextResponse.redirect(new URL(`/roms/${safeId}.smc`, req.url), 307);
+  return NextResponse.redirect(new URL(`/roms/${safeId}.smc?v=snes-pure-v3`, req.url), 307);
 }
 
 export async function GET(
@@ -36,5 +36,5 @@ export async function GET(
     .replace(/\.(smc|sfc|zip)$/i, '')
     .replace(/[^a-zA-Z0-9_-]/g, '');
 
-  return NextResponse.redirect(new URL(`/roms/${safeId}.smc`, req.url), 307);
+  return NextResponse.redirect(new URL(`/roms/${safeId}.smc?v=snes-pure-v3`, req.url), 307);
 }

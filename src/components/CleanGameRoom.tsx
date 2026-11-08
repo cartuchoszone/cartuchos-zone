@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { unzipSync } from 'fflate';
 import type { Game } from '@/types/game';
 import { resolveRomUrl } from '@/lib/catalog';
 import {
@@ -204,8 +205,8 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
             let res = await fetch(romTarget);
             if (!res.ok) {
               const altUrl = romTarget.includes('/api/rom/')
-                ? new URL(`/roms/${encodeURIComponent(fallbackGame.id)}.smc`, window.location.origin).href
-                : new URL(`/api/rom/${encodeURIComponent(fallbackGame.id)}.smc`, window.location.origin).href;
+                ? new URL(`/roms/${encodeURIComponent(fallbackGame.id)}.smc?v=snes-pure-v3`, window.location.origin).href
+                : new URL(`/api/rom/${encodeURIComponent(fallbackGame.id)}.smc?v=snes-pure-v3`, window.location.origin).href;
               const altRes = await fetch(altUrl);
               if (altRes.ok) {
                 res = altRes;
@@ -222,15 +223,51 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
           }
         }
 
-        // Check magic bytes: if it starts with PK (0x50 0x4B 0x03 0x04), name it .zip so RetroArch's internal zip unpacker engages
-        let romExt = 'smc';
+        // Check magic bytes: if it is a ZIP archive (stale browser cache or compressed ROM),
+        // extract raw ROM in memory with fflate so RetroArch always gets pure SMC bytecode!
         if (romData instanceof Blob) {
           try {
-            const headerBytes = new Uint8Array(await romData.slice(0, 4).arrayBuffer());
-            if (headerBytes[0] === 0x50 && headerBytes[1] === 0x4b && headerBytes[2] === 0x03 && headerBytes[3] === 0x04) {
-              romExt = 'zip';
+            const buf = await romData.arrayBuffer();
+            const headerBytes = new Uint8Array(buf, 0, 4);
+            const isZip = headerBytes[0] === 0x50 && headerBytes[1] === 0x4b;
+            const is7z = headerBytes[0] === 0x37 && headerBytes[1] === 0x7a;
+
+            if (isZip) {
+              console.log('[ROM] Formato ZIP detectado (cache antigo ou compactado). Extraindo cartucho em memória...');
+              setLoadingStatus('Extraindo cartucho puro...');
+              try {
+                const unzipped = unzipSync(new Uint8Array(buf));
+                const entries = Object.entries(unzipped).filter(
+                  ([name]) => !name.startsWith('__MACOSX') && !name.startsWith('.')
+                );
+                const snesEntry =
+                  entries.find(
+                    ([name]) =>
+                      name.toLowerCase().endsWith('.smc') ||
+                      name.toLowerCase().endsWith('.sfc')
+                  ) || entries.sort((a, b) => b[1].length - a[1].length)[0];
+
+                if (snesEntry && snesEntry[1].length > 0) {
+                  romData = new Blob([snesEntry[1]], { type: 'application/octet-stream' });
+                  console.log(`[ROM] Extraído com sucesso via fflate: ${snesEntry[0]} (${snesEntry[1].length} bytes)`);
+                }
+              } catch (unzipErr) {
+                console.warn('[ROM] Falha ao extrair ZIP com fflate:', unzipErr);
+              }
+            } else if (is7z && typeof romTarget === 'string') {
+              console.warn('[ROM] Cache antigo 7z detectado. Forçando download novo do cartucho puro...');
+              const freshUrl = romTarget.includes('?') ? `${romTarget}&t=${Date.now()}` : `${romTarget}?t=${Date.now()}`;
+              const freshRes = await fetch(freshUrl, { cache: 'reload' });
+              if (freshRes.ok) {
+                const freshBlob = await freshRes.blob();
+                if (!freshRes.headers.get('content-type')?.includes('text/html')) {
+                  romData = freshBlob;
+                }
+              }
             }
-          } catch {}
+          } catch (cacheBustErr) {
+            console.warn('[ROM] Verificação de cabeçalho avisou:', cacheBustErr);
+          }
         }
 
         if (isCancelled) return;
@@ -239,7 +276,7 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
         const instance = await Nostalgist.launch({
           core: selectedCore,
           rom: {
-            fileName: `${fallbackGame.id}.${romExt}`,
+            fileName: `${fallbackGame.id}.smc`,
             fileContent: romData,
           },
           element: canvas,

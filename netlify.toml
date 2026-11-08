@@ -8,7 +8,7 @@
 [[headers]]
   for = "/roms/*"
   [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
+    Cache-Control = "public, max-age=0, must-revalidate"
     Access-Control-Allow-Origin = "*"
 
 [[headers]]
@@ -26,13 +26,13 @@
 [[headers]]
   for = "/api/rom/*"
   [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
+    Cache-Control = "public, max-age=0, must-revalidate"
     Access-Control-Allow-Origin = "*"
 
 [[headers]]
   for = "/games/roms/snes/*"
   [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
+    Cache-Control = "public, max-age=0, must-revalidate"
     Access-Control-Allow-Origin = "*"
 
 # Redirecionamento de rotas de compatibilidade diretamente para a pasta estática /roms/
