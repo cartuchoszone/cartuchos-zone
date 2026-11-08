@@ -15,19 +15,15 @@ const nextConfig = {
     return [
       {
         source: '/games/roms/snes/:id.smc',
-        destination: '/roms/:id.smc',
+        destination: '/api/rom/:id',
       },
       {
         source: '/games/roms/snes/:id.sfc',
-        destination: '/roms/:id.smc',
+        destination: '/api/rom/:id',
       },
       {
         source: '/games/roms/snes/:id',
-        destination: '/roms/:id.smc',
-      },
-      {
-        source: '/api/rom/:id',
-        destination: '/roms/:id.smc',
+        destination: '/api/rom/:id',
       },
     ];
   },

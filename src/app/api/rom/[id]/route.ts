@@ -21,10 +21,13 @@ export async function HEAD(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
-  const safeId = id.replace(/[^a-zA-Z0-9_-]/g, '');
+  const rawId = decodeURIComponent(id || '');
+  const safeId = rawId
+    .replace(/\.(smc|sfc|zip)$/i, '')
+    .replace(/[^a-zA-Z0-9_-]/g, '');
 
   // 1. Check local public/roms folder first
-  const localExts = ['.smc', '.sfc', '.zip'];
+  const localExts = ['.smc', '.sfc', '.zip', '-snes.smc', '-snes.sfc', '-snes.zip'];
   const romsDir = path.join(process.cwd(), 'public', 'roms');
   for (const ext of localExts) {
     const filePath = path.join(romsDir, `${safeId}${ext}`);
@@ -48,6 +51,8 @@ export async function HEAD(
     `https://classicgamezone.com/games/roms/snes/${safeId}.smc`,
     `https://classicgamezone.com/games/roms/snes/${safeId}.sfc`,
     `https://classicgamezone.com/games/roms/snes/${safeId}.zip`,
+    `https://classicgamezone.com/games/roms/snes/${safeId}-snes.smc`,
+    `https://classicgamezone.com/games/roms/snes/${safeId}-snes.sfc`,
   ];
 
   for (const remoteUrl of candidates) {
@@ -91,10 +96,13 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
-  const safeId = id.replace(/[^a-zA-Z0-9_-]/g, '');
+  const rawId = decodeURIComponent(id || '');
+  const safeId = rawId
+    .replace(/\.(smc|sfc|zip)$/i, '')
+    .replace(/[^a-zA-Z0-9_-]/g, '');
 
   // 1. Check local public/roms folder first
-  const localExts = ['.smc', '.sfc', '.zip'];
+  const localExts = ['.smc', '.sfc', '.zip', '-snes.smc', '-snes.sfc', '-snes.zip'];
   const romsDir = path.join(process.cwd(), 'public', 'roms');
   for (const ext of localExts) {
     const filePath = path.join(romsDir, `${safeId}${ext}`);
@@ -117,6 +125,8 @@ export async function GET(
     `https://classicgamezone.com/games/roms/snes/${safeId}.smc`,
     `https://classicgamezone.com/games/roms/snes/${safeId}.sfc`,
     `https://classicgamezone.com/games/roms/snes/${safeId}.zip`,
+    `https://classicgamezone.com/games/roms/snes/${safeId}-snes.smc`,
+    `https://classicgamezone.com/games/roms/snes/${safeId}-snes.sfc`,
   ];
 
   const attempts: Array<{ url: string; status?: number; error?: string }> = [];

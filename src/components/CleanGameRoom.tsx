@@ -198,7 +198,10 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
 
         const instance = await Nostalgist.launch({
           core: selectedCore,
-          rom: romTarget,
+          rom: {
+            fileName: `${fallbackGame.id}.smc`,
+            fileContent: romTarget,
+          },
           element: canvas,
           size: 'auto',
           resolveCoreJs: (c) => `/cores/${c}_libretro.js`,
