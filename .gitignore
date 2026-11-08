@@ -38,3 +38,7 @@ next-env.d.ts
 Thumbs.db
 Desktop.ini
 
+# Scratch temporary scripts
+scratch/
+
+

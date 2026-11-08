@@ -196,11 +196,40 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
           romTarget = new URL(romSourceUrl, window.location.origin).href;
         }
 
+        // Pre-fetch ROM as Blob for zero fetch failures inside Nostalgist
+        let romData: Blob | string = romTarget;
+        if (typeof romTarget === 'string' && !romTarget.startsWith('blob:') && !romTarget.startsWith('data:')) {
+          setLoadingStatus('Carregando dados do cartucho...');
+          try {
+            let res = await fetch(romTarget);
+            if (!res.ok) {
+              const altUrl = romTarget.includes('/api/rom/')
+                ? new URL(`/roms/${encodeURIComponent(fallbackGame.id)}.smc`, window.location.origin).href
+                : new URL(`/api/rom/${encodeURIComponent(fallbackGame.id)}.smc`, window.location.origin).href;
+              const altRes = await fetch(altUrl);
+              if (altRes.ok) {
+                res = altRes;
+              }
+            }
+            if (res.ok) {
+              const ct = res.headers.get('content-type') || '';
+              if (!ct.includes('text/html')) {
+                romData = await res.blob();
+              }
+            }
+          } catch (fetchErr) {
+            console.warn('Pre-fetch do cartucho avisou:', fetchErr);
+          }
+        }
+
+        if (isCancelled) return;
+        setLoadingStatus(`Iniciando ${selectedCore === 'snes9x2010' ? 'SNES9x 2010' : 'SNES9x 2005'} (60 FPS)...`);
+
         const instance = await Nostalgist.launch({
           core: selectedCore,
           rom: {
             fileName: `${fallbackGame.id}.smc`,
-            fileContent: romTarget,
+            fileContent: romData,
           },
           element: canvas,
           size: 'auto',
