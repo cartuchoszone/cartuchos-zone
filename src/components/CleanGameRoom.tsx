@@ -222,13 +222,24 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
           }
         }
 
+        // Check magic bytes: if it starts with PK (0x50 0x4B 0x03 0x04), name it .zip so RetroArch's internal zip unpacker engages
+        let romExt = 'smc';
+        if (romData instanceof Blob) {
+          try {
+            const headerBytes = new Uint8Array(await romData.slice(0, 4).arrayBuffer());
+            if (headerBytes[0] === 0x50 && headerBytes[1] === 0x4b && headerBytes[2] === 0x03 && headerBytes[3] === 0x04) {
+              romExt = 'zip';
+            }
+          } catch {}
+        }
+
         if (isCancelled) return;
         setLoadingStatus(`Iniciando ${selectedCore === 'snes9x2010' ? 'SNES9x 2010' : 'SNES9x 2005'} (60 FPS)...`);
 
         const instance = await Nostalgist.launch({
           core: selectedCore,
           rom: {
-            fileName: `${fallbackGame.id}.smc`,
+            fileName: `${fallbackGame.id}.${romExt}`,
             fileContent: romData,
           },
           element: canvas,
