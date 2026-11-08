@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import type { Game } from '@/types/game';
 import { resolveRomUrl } from '@/lib/catalog';
 import {
@@ -50,8 +49,8 @@ const NOSTALGIST_BUTTON_MAP: Record<SnesButtonKey, string> = {
 };
 
 export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRoomProps) {
-  const router = useRouter();
   const [resolvedGame, setResolvedGame] = useState<Game | undefined>(initialGame);
+  const [isClosed, setIsClosed] = useState<boolean>(false);
 
   const fallbackGame: Game = resolvedGame || {
     id: gameId,
@@ -396,6 +395,16 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
     }
   };
 
+  const handleClose = () => {
+    try {
+      nostalgistRef.current?.exit?.({ removeCanvas: false });
+    } catch {}
+    try {
+      window.close();
+    } catch {}
+    setIsClosed(true);
+  };
+
   const updateDpadFromTouch = useCallback(
     (clientX: number, clientY: number) => {
       const el = dpadRef.current;
@@ -577,11 +586,12 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
         <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
           <button
             type="button"
-            onClick={() => router.push('/pt/snes-games')}
-            className="retro-btn px-2 py-1 rounded-lg bg-[#27233c] hover:bg-purple-600 font-pixel text-[8px] text-gray-200 border-2 border-black flex items-center gap-1 shrink-0 retro-shadow-sm transition-all"
+            onClick={handleClose}
+            className="retro-btn px-2.5 py-1 rounded-lg bg-[#3a1d28] hover:bg-rose-700 font-pixel text-[8px] text-rose-200 border-2 border-black flex items-center gap-1 shrink-0 retro-shadow-sm transition-all"
+            title="Fechar jogo"
           >
-            <span>◀</span>
-            <span className="hidden sm:inline">CATÁLOGO</span>
+            <span>✕</span>
+            <span>FECHAR</span>
           </button>
 
           <h1 className="font-pixel text-[9px] sm:text-[10px] text-amber-400 truncate drop-shadow-[1px_1px_0_#000]">
@@ -848,6 +858,32 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
           )
         )}
       </div>
+
+      {/* Screen Closed Overlay */}
+      {isClosed && (
+        <div className="fixed inset-0 z-50 bg-[#090812] flex flex-col items-center justify-center p-6 text-center select-none animate-fade-in">
+          <div className="w-16 h-16 rounded-2xl bg-[#1b1528] border-2 border-purple-500/40 flex items-center justify-center text-3xl mb-4 shadow-xl">
+            🎮
+          </div>
+          <h2 className="font-pixel text-sm sm:text-base text-amber-400 mb-2 drop-shadow-[1px_1px_0_#000]">
+            JOGO FINALIZADO
+          </h2>
+          <p className="text-xs text-gray-400 max-w-xs mb-6">
+            A sessão foi encerrada. Você já pode fechar esta aba no seu navegador.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setIsClosed(false);
+              setRecoveryKey((k) => k + 1);
+            }}
+            className="retro-btn px-4 py-2 rounded-lg bg-[#27233c] hover:bg-purple-600 font-pixel text-[9px] text-gray-200 border-2 border-black shadow-md transition-all flex items-center gap-1.5"
+          >
+            <span>🔄</span>
+            <span>JOGAR NOVAMENTE</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
