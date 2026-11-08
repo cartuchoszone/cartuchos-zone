@@ -35,33 +35,28 @@
     Cache-Control = "public, max-age=31536000, immutable"
     Access-Control-Allow-Origin = "*"
 
-# Se a ROM estática não existir na pasta local /roms/, direciona para a API dinâmica
+# Redirecionamento de rotas de compatibilidade diretamente para a pasta estática /roms/
 [[redirects]]
-  from = "/roms/:id.smc"
-  to = "/api/rom/:id"
+  from = "/api/rom/:id.smc"
+  to = "/roms/:id.smc"
   status = 200
-  force = false
 
 [[redirects]]
-  from = "/roms/:id.sfc"
-  to = "/api/rom/:id"
+  from = "/api/rom/:id"
+  to = "/roms/:id.smc"
   status = 200
-  force = false
 
 [[redirects]]
   from = "/games/roms/snes/:id.smc"
-  to = "/api/rom/:id"
+  to = "/roms/:id.smc"
   status = 200
-  force = false
 
 [[redirects]]
   from = "/games/roms/snes/:id.sfc"
-  to = "/api/rom/:id"
+  to = "/roms/:id.smc"
   status = 200
-  force = false
 
 [[redirects]]
   from = "/games/roms/snes/:id"
-  to = "/api/rom/:id"
+  to = "/roms/:id.smc"
   status = 200
-  force = false
