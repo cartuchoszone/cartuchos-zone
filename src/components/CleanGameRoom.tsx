@@ -734,7 +734,7 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
         {isHandheldLandscape ? (
           <>
             {/* Left Controller Grip (order-1) */}
-            <div className="order-1 w-44 sm:w-48 bg-gradient-to-b from-[#1b172c] to-[#120f1d] border-r border-purple-500/30 p-2.5 pb-6 flex flex-col items-center justify-between shrink-0 touch-none select-none">
+            <div className="order-1 w-40 sm:w-48 bg-gradient-to-b from-[#1b172c] to-[#120f1d] border-r border-purple-500/30 p-2.5 pb-16 sm:pb-20 flex flex-col items-center justify-between shrink-0 touch-none select-none">
               <button
                 type="button"
                 {...bindButtonEvents('L')}
@@ -745,11 +745,11 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
 
               {renderDpad('w-32 h-32')}
 
-              <div className="flex flex-col items-center gap-1 pb-3">
+              <div className="flex flex-col items-center gap-1">
                 <button
                   type="button"
                   {...bindButtonEvents('SELECT')}
-                  className="px-4 py-1.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border bg-[#2a2440] text-gray-200 border-purple-400/40 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200"
+                  className="px-4 py-1.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border bg-[#2a2440] text-gray-200 border-purple-400/40 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200 shadow-md"
                 >
                   Select
                 </button>
@@ -758,7 +758,7 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
             </div>
 
             {/* Right Controller Grip (order-3) */}
-            <div className="order-3 w-44 sm:w-48 bg-gradient-to-b from-[#1b172c] to-[#120f1d] border-l border-purple-500/30 p-2.5 pb-6 flex flex-col items-center justify-between shrink-0 touch-none select-none">
+            <div className="order-3 w-40 sm:w-48 bg-gradient-to-b from-[#1b172c] to-[#120f1d] border-l border-purple-500/30 p-2.5 pb-16 sm:pb-20 flex flex-col items-center justify-between shrink-0 touch-none select-none">
               <button
                 type="button"
                 {...bindButtonEvents('R')}
@@ -769,11 +769,11 @@ export default function CleanGameRoom({ game: initialGame, gameId }: CleanGameRo
 
               {renderActionButtons('w-32 h-32')}
 
-              <div className="flex flex-col items-center gap-1 pb-3">
+              <div className="flex flex-col items-center gap-1">
                 <button
                   type="button"
                   {...bindButtonEvents('START')}
-                  className="px-4 py-1.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border bg-[#2a2440] text-gray-200 border-purple-400/40 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200"
+                  className="px-4 py-1.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border bg-[#2a2440] text-gray-200 border-purple-400/40 data-[active=true]:bg-amber-400 data-[active=true]:text-gray-950 data-[active=true]:border-amber-200 shadow-md"
                 >
                   Start
                 </button>
